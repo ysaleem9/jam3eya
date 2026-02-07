@@ -271,6 +271,7 @@ class HomeScreen extends StatelessWidget {
           Share.share(
             'كود الانضمام لجمعية "$name": $code\nافتح التطبيق ← انضم بكود',
             subject: 'كود جمعية',
+            
           );
         },
       ),
