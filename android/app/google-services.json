@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1051579869558",
+    "project_id": "jam3eya-1407d",
+    "storage_bucket": "jam3eya-1407d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1051579869558:android:d43344b660d1d2520b7257",
+        "android_client_info": {
+          "package_name": "com.example.jam3eya"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDMTr5b8nMGnW0AqLDNhAg9ZOw5k84fPyU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
