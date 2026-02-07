@@ -1,0 +1,31 @@
+name: jam3eya
+description:  جمعية - تطبيق جمعيات للأصدقاء
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '^3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: any
+  go_router: any
+  flutter_riverpod: ^3.2.0
+  firebase_core: ^4.4.0
+  firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
+  firebase_messaging: ^16.1.1
+  characters: ^1.4.0
+  share_plus: ^12.0.1
+  flutter_local_notifications: ^20.0.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
