@@ -79,6 +79,13 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _login() async {
     if (FirebaseAuth.instance.currentUser == null) {
       await FirebaseAuth.instance.signInAnonymously();
+
+      final u = FirebaseAuth.instance.currentUser!;
+await FirebaseFirestore.instance.collection('users').doc(u.uid).set({
+  'displayName': 'بدون اسم', // لاحقًا بتخليه من شاشة اسم
+  'updatedAt': FieldValue.serverTimestamp(),
+}, SetOptions(merge: true));
+
     }
   // ✅ اطبع الـ UID هون
   debugPrint('AUTH UID = ${FirebaseAuth.instance.currentUser?.uid}');
@@ -473,6 +480,8 @@ class _JoinByCodeScreenState extends State<JoinByCodeScreen> {
         }
         return;
       }
+final me = await db.collection('users').doc(widget.uid).get();
+final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
 
       // 2) Create / update join request
       await db
@@ -482,13 +491,14 @@ class _JoinByCodeScreenState extends State<JoinByCodeScreen> {
           .doc(widget.uid)
           .set({
             'uid': widget.uid,
+            'displayName': myName,
             'status': 'pending',
             'requestedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
       // 3) Inbox notification for the requester (you)
       await db.collection('users').doc(widget.uid).collection('inbox').add({
-        'titleAr': 'طلبك قيد المراجعة',
+        'titleAr': 'طلب الانضمام للجمعية :$groupName قيد المراجعة',
         'bodyAr': 'طلب الانضمام إلى $groupName قيد المراجعة',
         'read': false,
         'createdAt': FieldValue.serverTimestamp(),
@@ -497,14 +507,17 @@ class _JoinByCodeScreenState extends State<JoinByCodeScreen> {
       });
 
       // 4) Inbox notification for the admin
-      await db.collection('users').doc(adminUid).collection('inbox').add({
+     await db.collection('users').doc(adminUid).collection('inbox').add({
   'type': 'join_request_new',
   'groupId': groupId,
+  'requesterUid': widget.uid,
+  'requesterName': myName,
   'titleAr': 'طلب انضمام جديد',
-  'bodyAr': 'مستخدم جديد طلب ينضم إلى جمعية: $groupName',
+  'bodyAr': '$myName طلب ينضم إلى جمعية: $groupId',
   'read': false,
   'createdAt': FieldValue.serverTimestamp(),
 });
+
 
 
       if (mounted) {
@@ -530,6 +543,9 @@ class _JoinByCodeScreenState extends State<JoinByCodeScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+final me = await db.collection('users').doc(widget.uid).get();
+final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
+
   }
 
   @override
@@ -731,29 +747,57 @@ class InboxScreen extends StatelessWidget {
               return ListTile(
                 title: Text(data['titleAr'] ?? ''),
                 subtitle: Text(data['bodyAr'] ?? ''),
-                onTap: () async {
-                  d.reference.update({'read': true});
-                  final n = d.data(); // Map<String, dynamic>
-
-  // 1) علّم الإشعار مقروء
-  await d.reference.update({'read': true});
-
+onTap: () async {
+  final n = d.data(); // Map<String, dynamic>
   final type = (n['type'] ?? '') as String;
   final groupId = (n['groupId'] ?? '') as String;
+
+  // علّم الإشعار مقروء (مرة واحدة)
+  await d.reference.update({'read': true});
 
   if (type == 'join_request_new' && groupId.isNotEmpty) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AdminRequestsScreen(
-          groupId: groupId,
-          groupName: (data['name'] ?? '') as String,
-        adminUid: (data['adminUid'] ?? '') as String,
-
-        ),
+           groupId: groupId,
+           groupName: (data['name'] ?? '') as String,
+         adminUid: (data['adminUid'] ?? '') as String),
       ),
     );
-    return;}
+    
+    return;
+    
+  }if (type == 'join_approved' && groupId.isNotEmpty) {
+  final g = await FirebaseFirestore.instance.collection('groups').doc(groupId).get();
+  final gd = g.data() ?? {};
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => GroupDashboardScreen(
+        uid: uid,
+        groupId: groupId,
+        groupName: (gd['name'] ?? '') as String,
+        adminUid: (gd['adminUid'] ?? '') as String,
+      ),
+    ),
+  );
+  return;
+}
+
+// ✅ إذا تم رفض الطلب: بس اعرض رسالة
+if (type == 'join_rejected') {
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم رفض طلب الانضمام')),
+    );
+  }
+  return;
+}
+
+  // (اختياري) أنواع ثانية لاحقًا...
+
                 },
               );
             }).toList(),
@@ -763,3 +807,4 @@ class InboxScreen extends StatelessWidget {
     );
   }
 }
+
