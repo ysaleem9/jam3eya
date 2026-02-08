@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'firebase_options.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
+import 'LoginScreen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -59,47 +60,28 @@ class Jam3eyaApp extends StatelessWidget {
    AUTH (Anonymous)
 ========================= */
 
-class AuthGate extends StatefulWidget {
+class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
   @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  bool _loading = true;
-  User? _user;
-
-  @override
-  void initState() {
-    super.initState();
-    _login();
-  }
-
-  Future<void> _login() async {
-    if (FirebaseAuth.instance.currentUser == null) {
-      await FirebaseAuth.instance.signInAnonymously();
-
-      final u = FirebaseAuth.instance.currentUser!;
-await FirebaseFirestore.instance.collection('users').doc(u.uid).set({
-  'displayName': 'بدون اسم', // لاحقًا بتخليه من شاشة اسم
-  'updatedAt': FieldValue.serverTimestamp(),
-}, SetOptions(merge: true));
-
-    }
-  // ✅ اطبع الـ UID هون
-  debugPrint('AUTH UID = ${FirebaseAuth.instance.currentUser?.uid}');
-
-    _user = FirebaseAuth.instance.currentUser;
-    setState(() => _loading = false);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-    return HomeScreen(uid: _user!.uid);
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (_, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snap.data;
+        if (user == null) {
+          return const LoginScreen();
+        }
+
+        return HomeScreen(uid: user.uid);
+      },
+    );
   }
 }
 
@@ -166,6 +148,12 @@ class HomeScreen extends StatelessWidget {
                     );
                   },
                 );
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.logout),
+              onPressed: () async {
+                await FirebaseAuth.instance.signOut();
               },
             ),
           ],
@@ -240,78 +228,79 @@ class HomeScreen extends StatelessWidget {
                           if (!g.exists) return const SizedBox();
 
                           final data = g.data()!;
-                         return ListTile(
-  leading: CircleAvatar(
-    child: Text(avatarLetter(data['name'] ?? '')),
-  ),
-  title: Text(data['name'] ?? ''),
-  subtitle: Text(
-    'الكود: ${data['inviteCode'] ?? ''}',
-  ),
+                          return ListTile(
+                            leading: CircleAvatar(
+                              child: Text(avatarLetter(data['name'] ?? '')),
+                            ),
+                            title: Text(data['name'] ?? ''),
+                            subtitle: Text(
+                              'الكود: ${data['inviteCode'] ?? ''}',
+                            ),
 
-  // 👇 هون الإضافة
-  trailing: Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      // زر النسخ
-      IconButton(
-        icon: const Icon(Icons.copy, size: 20),
-        tooltip: 'نسخ الكود',
-        onPressed: () async {
-          final code = data['inviteCode'] ?? '';
-          await Clipboard.setData(ClipboardData(text: code));
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('تم نسخ الكود ✅')),
-            );
-          }
-        },
-      ),
+                            // 👇 هون الإضافة
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // زر النسخ
+                                IconButton(
+                                  icon: const Icon(Icons.copy, size: 20),
+                                  tooltip: 'نسخ الكود',
+                                  onPressed: () async {
+                                    final code = data['inviteCode'] ?? '';
+                                    await Clipboard.setData(
+                                      ClipboardData(text: code),
+                                    );
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('تم نسخ الكود ✅'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ),
 
-      // زر المشاركة
-      IconButton(
-        icon: const Icon(Icons.share, size: 20),
-        tooltip: 'مشاركة الكود',
-        onPressed: () {
-          final code = data['inviteCode'] ?? '';
-          final name = data['name'] ?? '';
-          Share.share(
-            'كود الانضمام لجمعية "$name": $code\nافتح التطبيق ← انضم بكود',
-            subject: 'كود جمعية',
-            
-          );
-        },
-      ),
-    ],
-  ),
+                                // زر المشاركة
+                                IconButton(
+                                  icon: const Icon(Icons.share, size: 20),
+                                  tooltip: 'مشاركة الكود',
+                                  onPressed: () {
+                                    final code = data['inviteCode'] ?? '';
+                                    final name = data['name'] ?? '';
+                                    Share.share(
+                                      'كود الانضمام لجمعية "$name": $code\nافتح التطبيق ← انضم بكود',
+                                      subject: 'كود جمعية',
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
 
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GroupDashboardScreen(
-          uid: uid,
-          groupId: groupId,
-          groupName: data['name'] ?? '',
-          adminUid: data['adminUid'] ?? '',
-        ),
-      ),
-    );
-  },
-);
-
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GroupDashboardScreen(
+                                    uid: uid,
+                                    groupId: groupId,
+                                    groupName: data['name'] ?? '',
+                                    adminUid: data['adminUid'] ?? '',
+                                  ),
+                                ),
+                              );
+                            },
+                          );
                         },
                       );
                     },
                   );
-
-                  
                 },
               ),
             ),
           ],
         ),
-        
       ),
     );
   }
@@ -347,43 +336,46 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     final groupRef = db.collection('groups').doc();
     final invite = makeInviteCode();
 
-final batch = db.batch();
+    final batch = db.batch();
 
-batch.set(groupRef, {
-  'name': _nameCtrl.text.trim(),
-  'inviteCode': invite,
-  'adminUid': widget.uid,
-  'createdAt': FieldValue.serverTimestamp(),
-});
+    batch.set(groupRef, {
+      'name': _nameCtrl.text.trim(),
+      'inviteCode': invite,
+      'adminUid': widget.uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-batch.set(groupRef.collection('members').doc(widget.uid), {
-  'uid': widget.uid,
-  'role': 'admin',
-  'joinedAt': FieldValue.serverTimestamp(),
-});
+    batch.set(groupRef.collection('members').doc(widget.uid), {
+      'uid': widget.uid,
+      'role': 'admin',
+      'joinedAt': FieldValue.serverTimestamp(),
+    });
 
-// إذا مطبقين حل myGroups (الحل الثاني)
-batch.set(
-  db.collection('users').doc(widget.uid).collection('myGroups').doc(groupRef.id),
-  {
-    'groupId': groupRef.id,
-    'groupName': _nameCtrl.text.trim(),
-    'inviteCode': invite,
-    'adminUid': widget.uid,
-    'role': 'admin',
-    'joinedAt': FieldValue.serverTimestamp(),
-  },
-);
-debugPrint('CREATE uid=${FirebaseAuth.instance.currentUser?.uid}');
-final u = FirebaseAuth.instance.currentUser;
-if (u == null) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('لسه ما تم تسجيل الدخول، جرّب مرة ثانية')),
-  );
-  return;
-}
-await batch.commit();
-
+    // إذا مطبقين حل myGroups (الحل الثاني)
+    batch.set(
+      db
+          .collection('users')
+          .doc(widget.uid)
+          .collection('myGroups')
+          .doc(groupRef.id),
+      {
+        'groupId': groupRef.id,
+        'groupName': _nameCtrl.text.trim(),
+        'inviteCode': invite,
+        'adminUid': widget.uid,
+        'role': 'admin',
+        'joinedAt': FieldValue.serverTimestamp(),
+      },
+    );
+    debugPrint('CREATE uid=${FirebaseAuth.instance.currentUser?.uid}');
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لسه ما تم تسجيل الدخول، جرّب مرة ثانية')),
+      );
+      return;
+    }
+    await batch.commit();
 
     setState(() => _saving = false);
     if (mounted) Navigator.pop(context);
@@ -480,8 +472,8 @@ class _JoinByCodeScreenState extends State<JoinByCodeScreen> {
         }
         return;
       }
-final me = await db.collection('users').doc(widget.uid).get();
-final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
+      final me = await db.collection('users').doc(widget.uid).get();
+      final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
 
       // 2) Create / update join request
       await db
@@ -507,18 +499,16 @@ final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
       });
 
       // 4) Inbox notification for the admin
-     await db.collection('users').doc(adminUid).collection('inbox').add({
-  'type': 'join_request_new',
-  'groupId': groupId,
-  'requesterUid': widget.uid,
-  'requesterName': myName,
-  'titleAr': 'طلب انضمام جديد',
-  'bodyAr': '$myName طلب ينضم إلى جمعية: $groupId',
-  'read': false,
-  'createdAt': FieldValue.serverTimestamp(),
-});
-
-
+      await db.collection('users').doc(adminUid).collection('inbox').add({
+        'type': 'join_request_new',
+        'groupId': groupId,
+        'requesterUid': widget.uid,
+        'requesterName': myName,
+        'titleAr': 'طلب انضمام جديد',
+        'bodyAr': '$myName طلب ينضم إلى جمعية: $groupId',
+        'read': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
       if (mounted) {
         ScaffoldMessenger.of(
@@ -543,9 +533,8 @@ final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-final me = await db.collection('users').doc(widget.uid).get();
-final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
-
+    final me = await db.collection('users').doc(widget.uid).get();
+    final myName = (me.data()?['displayName'] ?? 'بدون اسم') as String;
   }
 
   @override
@@ -666,44 +655,97 @@ class AdminRequestsScreen extends StatelessWidget {
             children: snap.data!.docs.map((d) {
               return ListTile(
                 title: Text(d.id),
-                trailing: IconButton(
-                  icon: const Icon(Icons.check),
-                  onPressed: () async {
-                    await db
-                        .collection('groups')
-                        .doc(groupId)
-                        .collection('members')
-                        .doc(d.id)
-                        .set({
-                          'uid': d.id,
-                          'role': 'member',
-                          'joinedAt': FieldValue.serverTimestamp(),
-                        });
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () async {
+                        final db = FirebaseFirestore.instance;
+                        final userId = d.id;
 
-                    await d.reference.update({'status': 'approved'});
+                        // 1) حدّث الطلب مرفوض (أو احذفه)
+                        await d.reference.update({'status': 'rejected'});
 
-                    await db
-                        .collection('users')
-                        .doc(d.id)
-                        .collection('inbox')
-                        .add({
-                          'titleAr': 'تم قبولك',
-                          'bodyAr': 'تمت إضافتك إلى $groupName',
-                          'read': false,
-                          'createdAt': FieldValue.serverTimestamp(),
-                        });
-                    await db
-                        .collection('users')
-                        .doc(d.id)
-                        .collection('myGroups')
-                        .doc(groupId)
-                        .set({
-                          'role': 'member',
-                          'joinedAt': FieldValue.serverTimestamp(),
-                        });
+                        // 2) إشعار داخلي لليوزر
+                        await db
+                            .collection('users')
+                            .doc(userId)
+                            .collection('inbox')
+                            .add({
+                              'titleAr': 'تم رفض الطلب',
+                              'bodyAr': 'تم رفض طلب انضمامك إلى $groupName',
+                              'read': false,
+                              'createdAt': FieldValue.serverTimestamp(),
+                              'type': 'join_rejected',
+                              'groupId': groupId,
+                            });
 
-                        
-                  },
+                        // (اختياري) احذف الطلب بعد الرفض بدل ما يضل بالسجل:
+                        // await d.reference.delete();
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.check),
+                      onPressed: () async {
+                        final db = FirebaseFirestore.instance;
+                        final userId = d.id;
+
+                        // 1) أضف العضو
+                        await db
+                            .collection('groups')
+                            .doc(groupId)
+                            .collection('members')
+                            .doc(userId)
+                            .set({
+                              'uid': userId,
+                              'role': 'member',
+                              'joinedAt': FieldValue.serverTimestamp(),
+                            });
+
+                        // 2) حدّث الطلب approved
+                        await d.reference.update({'status': 'approved'});
+
+                        // 3) جيب inviteCode
+                        final gDoc = await db
+                            .collection('groups')
+                            .doc(groupId)
+                            .get();
+                        final gData = gDoc.data() as Map<String, dynamic>;
+                        final inviteCode =
+                            (gData['inviteCode'] ?? '') as String;
+
+                        // 4) اكتب myGroups للعضو
+                        await db
+                            .collection('users')
+                            .doc(userId)
+                            .collection('myGroups')
+                            .doc(groupId)
+                            .set({
+                              'groupId': groupId,
+                              'groupName': groupName,
+                              'inviteCode': inviteCode,
+                              'adminUid': adminUid,
+                              'role': 'member',
+                              'joinedAt': FieldValue.serverTimestamp(),
+                            });
+
+                        // 5) إشعار قبول
+                        await db
+                            .collection('users')
+                            .doc(userId)
+                            .collection('inbox')
+                            .add({
+                              'titleAr': 'تم قبولك',
+                              'bodyAr': 'تمت إضافتك إلى $groupName',
+                              'read': false,
+                              'createdAt': FieldValue.serverTimestamp(),
+                              'type': 'join_approved',
+                              'groupId': groupId,
+                            });
+                      },
+                    ),
+                  ],
                 ),
               );
             }).toList(),
@@ -747,57 +789,60 @@ class InboxScreen extends StatelessWidget {
               return ListTile(
                 title: Text(data['titleAr'] ?? ''),
                 subtitle: Text(data['bodyAr'] ?? ''),
-onTap: () async {
-  final n = d.data(); // Map<String, dynamic>
-  final type = (n['type'] ?? '') as String;
-  final groupId = (n['groupId'] ?? '') as String;
+                onTap: () async {
+                  final n = d.data(); // Map<String, dynamic>
+                  final type = (n['type'] ?? '') as String;
+                  final groupId = (n['groupId'] ?? '') as String;
 
-  // علّم الإشعار مقروء (مرة واحدة)
-  await d.reference.update({'read': true});
+                  // علّم الإشعار مقروء (مرة واحدة)
+                  await d.reference.update({'read': true});
 
-  if (type == 'join_request_new' && groupId.isNotEmpty) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AdminRequestsScreen(
-           groupId: groupId,
-           groupName: (data['name'] ?? '') as String,
-         adminUid: (data['adminUid'] ?? '') as String),
-      ),
-    );
-    
-    return;
-    
-  }if (type == 'join_approved' && groupId.isNotEmpty) {
-  final g = await FirebaseFirestore.instance.collection('groups').doc(groupId).get();
-  final gd = g.data() ?? {};
+                  if (type == 'join_request_new' && groupId.isNotEmpty) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AdminRequestsScreen(
+                          groupId: groupId,
+                          groupName: (data['name'] ?? '') as String,
+                          adminUid: (data['adminUid'] ?? '') as String,
+                        ),
+                      ),
+                    );
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => GroupDashboardScreen(
-        uid: uid,
-        groupId: groupId,
-        groupName: (gd['name'] ?? '') as String,
-        adminUid: (gd['adminUid'] ?? '') as String,
-      ),
-    ),
-  );
-  return;
-}
+                    return;
+                  }
+                  if (type == 'join_approved' && groupId.isNotEmpty) {
+                    final g = await FirebaseFirestore.instance
+                        .collection('groups')
+                        .doc(groupId)
+                        .get();
+                    final gd = g.data() ?? {};
 
-// ✅ إذا تم رفض الطلب: بس اعرض رسالة
-if (type == 'join_rejected') {
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم رفض طلب الانضمام')),
-    );
-  }
-  return;
-}
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GroupDashboardScreen(
+                          uid: uid,
+                          groupId: groupId,
+                          groupName: (gd['name'] ?? '') as String,
+                          adminUid: (gd['adminUid'] ?? '') as String,
+                        ),
+                      ),
+                    );
+                    return;
+                  }
 
-  // (اختياري) أنواع ثانية لاحقًا...
+                  // ✅ إذا تم رفض الطلب: بس اعرض رسالة
+                  if (type == 'join_rejected') {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('تم رفض طلب الانضمام')),
+                      );
+                    }
+                    return;
+                  }
 
+                  // (اختياري) أنواع ثانية لاحقًا...
                 },
               );
             }).toList(),
@@ -807,4 +852,3 @@ if (type == 'join_rejected') {
     );
   }
 }
-
