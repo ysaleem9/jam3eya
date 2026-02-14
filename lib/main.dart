@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:jam3eya/MembersScreen.dart';
 import 'firebase_options.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
@@ -321,11 +322,15 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _nameCtrl = TextEditingController();
   bool _saving = false;
-
+  final _amountCtrl = TextEditingController(
+    text: '200',
+  ); // الدفعة الشهرية لكل عضو
+  int _payDay = 5; // يوم الدفع (1..28)
   @override
   void dispose() {
     _nameCtrl.dispose();
     super.dispose();
+    _amountCtrl.dispose();
   }
 
   Future<void> _create() async {
@@ -335,13 +340,19 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     final db = FirebaseFirestore.instance;
     final groupRef = db.collection('groups').doc();
     final invite = makeInviteCode();
-
+    final now = DateTime.now();
+    final m = now.month.toString().padLeft(2, '0');
+    final startMonth = '${now.year}-$m';
     final batch = db.batch();
 
     batch.set(groupRef, {
       'name': _nameCtrl.text.trim(),
       'inviteCode': invite,
       'adminUid': widget.uid,
+      'amountPerMember': int.tryParse(_amountCtrl.text.trim()) ?? 0,
+      'payDay': _payDay,
+      'startMonth': startMonth,
+      'memberOrder': [widget.uid], // الأدمن أول واحد مبدئيًا
       'createdAt': FieldValue.serverTimestamp(),
     });
 
@@ -396,6 +407,57 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 12),
+
+            TextField(
+              controller: _amountCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'الدفعة الشهرية لكل عضو',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            DropdownButtonFormField<int>(
+              value: _payDay,
+              items: List.generate(28, (i) => i + 1)
+                  .map((d) => DropdownMenuItem(value: d, child: Text('يوم $d')))
+                  .toList(),
+              onChanged: (v) => setState(() => _payDay = v ?? 5),
+              decoration: const InputDecoration(
+                labelText: 'يوم الدفع الشهري',
+                border: OutlineInputBorder(),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            Builder(
+              builder: (_) {
+                final amount = int.tryParse(_amountCtrl.text.trim()) ?? 0;
+                // final membersCount =
+                //     _members.length; // إذا عندك قائمة أعضاء محلية
+                // final pot = amount * membersCount;
+                // final months = membersCount;
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Text('عدد الأعضاء الحالي: $membersCount'),
+                        // Text('صندوق الشهر: $pot'),
+                        // Text('عدد الشهور للدورة: $months'),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
             const Spacer(),
             FilledButton(
               onPressed: _saving ? null : _create,
@@ -587,28 +649,292 @@ class GroupDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAdmin = uid == adminUid;
-
     return Scaffold(
       appBar: AppBar(title: Text(groupName)),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: isAdmin
-            ? FilledButton(
-                child: const Text('طلبات الانضمام'),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AdminRequestsScreen(
-                        groupId: groupId,
-                        groupName: groupName,
-                        adminUid: uid,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ====== كرت الحساب ======
+            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance
+                  .collection('groups')
+                  .doc(groupId)
+                  .snapshots(),
+              builder: (_, gSnap) {
+                if (!gSnap.hasData) {
+                  return const SizedBox();
+                }
+
+                final g = gSnap.data!;
+                if (!g.exists) return const SizedBox();
+
+                final data = g.data()!;
+                final amountPerMember = (data['amountPerMember'] ?? 0) as int;
+                final payDay = (data['payDay'] ?? 5) as int;
+
+                return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('groups')
+                      .doc(groupId)
+                      .collection('members')
+                      .snapshots(),
+                  builder: (_, mSnap) {
+                    if (!mSnap.hasData) {
+                      return const SizedBox();
+                    }
+
+                    final membersCount = mSnap.data!.docs.length;
+                    final pot = amountPerMember * membersCount;
+                    final months = membersCount;
+
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('الدفعة الشهرية لكل عضو: $amountPerMember'),
+                            Text('يوم الدفع الشهري: $payDay'),
+                            const SizedBox(height: 8),
+                            Text('عدد الأعضاء: $membersCount'),
+                            Text('صندوق الشهر: $pot'),
+                            Text('عدد الشهور للدورة: $months'),
+                          ],
+                        ),
                       ),
+                    );
+                  },
+                );
+              },
+            ),
+
+            const SizedBox(height: 16),
+
+            // ====== زر الأعضاء ======
+            isAdmin
+                ? FilledButton(
+                    child: const Text('الأعضاء'),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => MembersScreen(
+                            groupId: groupId,
+                            groupName: groupName,
+                            adminUid: adminUid,
+                            currentUid: uid,
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                : const Text('الأعضاء'),
+
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ScheduleScreen(
+                      groupId: groupId,
+                      groupName: groupName,
+                      currentUid: uid,
+                      adminUid: adminUid,
                     ),
+                  ),
+                );
+              },
+              child: const Text('جدول الاستلام'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ScheduleScreen extends StatefulWidget {
+  final String groupId;
+  final String groupName;
+  final String currentUid;
+  final String adminUid;
+
+  const ScheduleScreen({
+    super.key,
+    required this.groupId,
+    required this.groupName,
+    required this.currentUid,
+    required this.adminUid,
+  });
+
+  @override
+  State<ScheduleScreen> createState() => _ScheduleScreenState();
+}
+
+class _ScheduleScreenState extends State<ScheduleScreen> {
+  bool get isAdmin => widget.currentUid == widget.adminUid;
+
+  DateTime _parseMonth(String ym) {
+    final parts = ym.split('-');
+    final y = int.parse(parts[0]);
+    final m = int.parse(parts[1]);
+    return DateTime(y, m, 1);
+  }
+
+  DateTime _addMonths(DateTime d, int months) {
+    return DateTime(d.year, d.month + months, 1);
+  }
+
+  String _fmtYM(DateTime d) {
+    final m = d.month.toString().padLeft(2, '0');
+    return '${d.year}-$m';
+  }
+
+  Future<void> _saveOrder(List<String> newOrder) async {
+    await FirebaseFirestore.instance
+        .collection('groups')
+        .doc(widget.groupId)
+        .update({'memberOrder': newOrder});
+
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حفظ ترتيب الاستلام ✅')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final db = FirebaseFirestore.instance;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: Text('جدول الاستلام - ${widget.groupName}')),
+        body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: db.collection('groups').doc(widget.groupId).snapshots(),
+          builder: (_, gSnap) {
+            if (gSnap.hasError) {
+              return Center(child: Text('ERROR: ${gSnap.error}'));
+            }
+            if (!gSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final g = gSnap.data!;
+            if (!g.exists) {
+              return const Center(child: Text('الجمعية غير موجودة'));
+            }
+
+            final data = g.data()!;
+            final payDay = (data['payDay'] ?? 5) as int;
+            final startMonthStr = (data['startMonth'] ?? '') as String;
+            final order = (data['memberOrder'] ?? []) as List<dynamic>;
+            final memberOrder = order.map((e) => e.toString()).toList();
+
+            if (startMonthStr.isEmpty) {
+              return const Center(child: Text('startMonth غير موجود'));
+            }
+            if (memberOrder.isEmpty) {
+              return const Center(child: Text('لا يوجد أعضاء في الدور'));
+            }
+
+            final startMonth = _parseMonth(startMonthStr);
+            final d = payDay.clamp(1, 28);
+
+            // نجمع بيانات المستخدمين لأسماءهم
+            return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              future: db.collection('users').get(),
+              builder: (_, uSnap) {
+                final nameByUid = <String, String>{};
+                final emailByUid = <String, String>{};
+
+                if (uSnap.hasData) {
+                  for (final doc in uSnap.data!.docs) {
+                    final u = doc.data();
+                    nameByUid[doc.id] = (u['displayName'] ?? doc.id).toString();
+                    emailByUid[doc.id] = (u['email'] ?? '').toString();
+                  }
+                }
+
+                // ✅ للأدمن: ترتيب بالسحب
+                if (isAdmin) {
+                  return ReorderableListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: memberOrder.length,
+                    buildDefaultDragHandles: false, // ✅ مهم
+                    onReorder: (oldIndex, newIndex) async {
+                      setState(() {
+                        if (newIndex > oldIndex) newIndex -= 1;
+                        final item = memberOrder.removeAt(oldIndex);
+                        memberOrder.insert(newIndex, item);
+                      });
+                      await _saveOrder(memberOrder);
+                    },
+                    itemBuilder: (_, i) {
+                      final uid = memberOrder[i];
+
+                      final monthDate = _addMonths(startMonth, i);
+                      final ym = _fmtYM(monthDate);
+
+                      final receiverName = nameByUid[uid] ?? uid;
+                      final receiverEmail = emailByUid[uid] ?? '';
+
+                      return ListTile(
+                        key: ValueKey('member-$uid'), // ✅ key واضح
+                        leading: CircleAvatar(
+                          child: Text(avatarLetter(receiverName)),
+                        ),
+                        title: Text('$ym • يوم الدفع $d'),
+                        subtitle: Text(
+                          receiverEmail.isEmpty
+                              ? 'المستلم: $receiverName'
+                              : 'المستلم: $receiverName • $receiverEmail',
+                        ),
+                        // ✅ هذي اللي تخليك تسحب من الأيقونة
+                        trailing: ReorderableDragStartListener(
+                          index: i,
+                          child: const Icon(Icons.drag_handle),
+                        ),
+                      );
+                    },
                   );
-                },
-              )
-            : const Text('بانتظار موافقة الأدمن'),
+                }
+
+                // ✅ لغير الأدمن: عرض فقط
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: memberOrder.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final uid = memberOrder[i];
+
+                    final monthDate = _addMonths(startMonth, i);
+                    final ym = _fmtYM(monthDate);
+
+                    final receiverName = nameByUid[uid] ?? uid;
+                    final receiverEmail = emailByUid[uid] ?? '';
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        child: Text(avatarLetter(receiverName)),
+                      ),
+                      title: Text('$ym • يوم الدفع $d'),
+                      subtitle: Text(
+                        receiverEmail.isEmpty
+                            ? 'المستلم: $receiverName'
+                            : 'المستلم: $receiverName • $receiverEmail',
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -701,6 +1027,14 @@ class AdminRequestsScreen extends StatelessWidget {
                               'uid': userId,
                               'role': 'member',
                               'joinedAt': FieldValue.serverTimestamp(),
+                            });
+                        await FirebaseFirestore.instance
+                            .collection('groups')
+                            .doc(groupId)
+                            .update({
+                              'memberOrder': FieldValue.arrayUnion([
+                                userId,
+                              ]), // يضيفه آخر القائمة (بدون تكرار)
                             });
 
                         // 2) حدّث الطلب approved
